@@ -5,7 +5,8 @@ One small **Cloudflare Worker + D1** that backs the high-score leaderboard for
 `game` (Retroix's `gameId`), so a new game needs **no new infrastructure** — just a new
 id. Replaces the old Supabase backend; free at hobby scale and it never sleeps.
 
-**Live:** https://retroix-leaderboard.danmat.workers.dev
+**API:** https://retroix-leaderboard.danmat.workers.dev
+**Live dashboard:** https://danmat.github.io/retroix-leaderboard/ — every game's top ten on one arcade-style page.
 
 ## API
 
@@ -13,6 +14,8 @@ id. Replaces the old Supabase backend; free at hobby scale and it never sleeps.
 |---|---|---|---|
 | `GET` | `/scores?game=<id>&limit=<n>` | — | `[{ initials, score, stage, created_at }]`, score desc |
 | `POST` | `/scores` | `{ game, initials, score, stage }` | `{ ok: true }` (201) |
+| `GET` | `/games` | — | `[{ game, entries, topScore }]` — registered games + stats |
+| `GET` | `/leaderboards?limit=<n>` | — | `{ [game]: [rows] }` — every game's top-N in one call (powers the dashboard) |
 
 CORS is open (`*`) by default so any game page can use it. Server-side it validates the
 `game` id, uppercases + trims `initials` to 3 letters, and **clamps `score` to a hard
