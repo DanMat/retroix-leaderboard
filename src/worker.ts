@@ -55,6 +55,40 @@ export default {
 		if (url.pathname === '/') {
 			return json({ ok: true, service: 'retroix-leaderboard' }, 200, cors);
 		}
+
+		// Registered games (those with at least one score) + quick stats.
+		if (url.pathname === '/games' && request.method === 'GET') {
+			const { results } = await env.DB.prepare(
+				'SELECT game, COUNT(*) AS entries, MAX(score) AS topScore FROM scores GROUP BY game ORDER BY game',
+			).all();
+			return json(results ?? [], 200, cors);
+		}
+
+		// Every game's top-N in one response — powers the combined dashboard.
+		if (url.pathname === '/leaderboards' && request.method === 'GET') {
+			const limit = toInt(url.searchParams.get('limit') ?? '10', 1, 50) || 10;
+			const { results } = await env.DB.prepare(
+				`SELECT game, initials, score, stage, created_at FROM (
+					SELECT game, initials, score, stage, created_at,
+						ROW_NUMBER() OVER (PARTITION BY game ORDER BY score DESC, created_at ASC) AS rn
+					FROM scores
+				) WHERE rn <= ?1 ORDER BY game ASC, score DESC`,
+			)
+				.bind(limit)
+				.all();
+			const byGame: Record<string, unknown[]> = {};
+			for (const r of (results ?? []) as Array<Record<string, unknown>>) {
+				const key = String(r.game);
+				(byGame[key] ??= []).push({
+					initials: r.initials,
+					score: r.score,
+					stage: r.stage,
+					created_at: r.created_at,
+				});
+			}
+			return json(byGame, 200, cors);
+		}
+
 		if (url.pathname !== '/scores') return json({ error: 'not found' }, 404, cors);
 
 		const allow = (env.ALLOWED_GAMES ?? '').split(',').map((s) => s.trim()).filter(Boolean);

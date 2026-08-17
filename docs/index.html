@@ -1,0 +1,375 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<title>Retroix — High Scores</title>
+		<meta
+			name="description"
+			content="Live high-score leaderboards for every Retroix arcade game — one Cloudflare Worker + D1 backend."
+		/>
+		<link
+			rel="icon"
+			href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='14' font-size='14'>🕹️</text></svg>"
+		/>
+		<link rel="preconnect" href="https://fonts.googleapis.com" />
+		<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+		<link
+			href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap"
+			rel="stylesheet"
+		/>
+		<style>
+			:root {
+				--bg: #0a0a12;
+				--panel: #12121f;
+				--panel-2: #171728;
+				--line: #24243c;
+				--ink: #e9e9ff;
+				--muted: #8a8ab4;
+				--faint: #5a5a80;
+				--cyan: #00e5ff;
+				--magenta: #ff3caa;
+				--gold: #ffd166;
+				--silver: #c9d2e6;
+				--bronze: #e0904c;
+				--arcade: 'Press Start 2P', system-ui, sans-serif;
+				--mono: ui-monospace, 'SF Mono', 'JetBrains Mono', Menlo, monospace;
+			}
+			* {
+				box-sizing: border-box;
+			}
+			body {
+				margin: 0;
+				background: var(--bg);
+				color: var(--ink);
+				font-family: var(--mono);
+				line-height: 1.5;
+				-webkit-font-smoothing: antialiased;
+				background-image:
+					radial-gradient(60% 40% at 50% -5%, rgba(0, 229, 255, 0.12), transparent 60%),
+					radial-gradient(50% 40% at 90% 10%, rgba(255, 60, 170, 0.08), transparent 60%);
+				background-repeat: no-repeat;
+			}
+			/* subtle CRT scanlines */
+			body::before {
+				content: '';
+				position: fixed;
+				inset: 0;
+				pointer-events: none;
+				background: repeating-linear-gradient(
+					transparent 0 2px,
+					rgba(0, 0, 0, 0.16) 2px 3px
+				);
+				z-index: 100;
+			}
+			.wrap {
+				max-width: 1180px;
+				margin: 0 auto;
+				padding: clamp(1.5rem, 4vw, 3.5rem) clamp(1rem, 4vw, 2rem) 4rem;
+			}
+			header {
+				text-align: center;
+				margin-bottom: clamp(2rem, 5vw, 3.5rem);
+			}
+			.eyebrow {
+				font-family: var(--mono);
+				font-size: 0.72rem;
+				letter-spacing: 0.35em;
+				text-transform: uppercase;
+				color: var(--cyan);
+				margin: 0 0 1.1rem;
+			}
+			h1 {
+				font-family: var(--arcade);
+				font-size: clamp(1.6rem, 6vw, 3.4rem);
+				line-height: 1.1;
+				margin: 0 0 1.2rem;
+				color: #fff;
+				text-shadow:
+					0 0 8px rgba(0, 229, 255, 0.7),
+					0 0 22px rgba(0, 229, 255, 0.45),
+					4px 4px 0 var(--magenta);
+			}
+			.sub {
+				color: var(--muted);
+				max-width: 54ch;
+				margin: 0 auto;
+				font-size: 0.95rem;
+			}
+			.meta {
+				margin-top: 1.4rem;
+				display: flex;
+				gap: 1.2rem;
+				justify-content: center;
+				flex-wrap: wrap;
+				font-family: var(--arcade);
+				font-size: 0.6rem;
+				color: var(--faint);
+				letter-spacing: 0.05em;
+			}
+			.meta b {
+				color: var(--cyan);
+			}
+			.refresh {
+				font-family: var(--mono);
+				font-size: 0.72rem;
+				letter-spacing: 0.08em;
+				text-transform: uppercase;
+				color: var(--muted);
+				background: var(--panel);
+				border: 1px solid var(--line);
+				border-radius: 8px;
+				padding: 0.35rem 0.8rem;
+				cursor: pointer;
+			}
+			.refresh:hover {
+				color: var(--cyan);
+				border-color: var(--cyan);
+			}
+
+			.grid {
+				display: grid;
+				grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+				gap: clamp(1rem, 2.5vw, 1.6rem);
+			}
+			.cab {
+				background: linear-gradient(180deg, var(--panel-2), var(--panel));
+				border: 1px solid var(--line);
+				border-top: 2px solid var(--cyan);
+				border-radius: 12px;
+				overflow: hidden;
+				box-shadow: 0 0 0 1px rgba(0, 229, 255, 0.05), 0 12px 30px -18px rgba(0, 229, 255, 0.4);
+			}
+			.cab-head {
+				display: flex;
+				align-items: baseline;
+				justify-content: space-between;
+				gap: 0.6rem;
+				padding: 1rem 1.1rem 0.7rem;
+				border-bottom: 1px solid var(--line);
+			}
+			.cab-name {
+				font-family: var(--arcade);
+				font-size: 0.9rem;
+				color: #fff;
+				text-decoration: none;
+				text-shadow: 0 0 10px rgba(0, 229, 255, 0.35);
+			}
+			.cab-name:hover {
+				color: var(--cyan);
+			}
+			.cab-tag {
+				font-size: 0.72rem;
+				color: var(--faint);
+				white-space: nowrap;
+			}
+			ol.board {
+				list-style: none;
+				margin: 0;
+				padding: 0.5rem 0.6rem 0.9rem;
+				min-height: 60px;
+			}
+			ol.board li {
+				display: grid;
+				grid-template-columns: 1.8rem 1fr auto;
+				align-items: center;
+				gap: 0.7rem;
+				padding: 0.34rem 0.5rem;
+				border-radius: 6px;
+			}
+			ol.board li:nth-child(odd) {
+				background: rgba(255, 255, 255, 0.02);
+			}
+			.rk {
+				font-family: var(--arcade);
+				font-size: 0.6rem;
+				color: var(--faint);
+				text-align: right;
+			}
+			.ini {
+				font-family: var(--arcade);
+				font-size: 0.72rem;
+				letter-spacing: 0.1em;
+				color: var(--ink);
+			}
+			.sc {
+				font-variant-numeric: tabular-nums;
+				font-weight: 600;
+				color: var(--cyan);
+			}
+			li.r1 .rk,
+			li.r1 .ini {
+				color: var(--gold);
+				text-shadow: 0 0 10px rgba(255, 209, 102, 0.5);
+			}
+			li.r1 .sc {
+				color: var(--gold);
+			}
+			li.r2 .rk,
+			li.r2 .ini {
+				color: var(--silver);
+			}
+			li.r3 .rk,
+			li.r3 .ini {
+				color: var(--bronze);
+			}
+			.empty {
+				padding: 1.4rem 1.1rem;
+				color: var(--faint);
+				font-size: 0.82rem;
+				text-align: center;
+			}
+			.empty a {
+				color: var(--magenta);
+			}
+			footer {
+				margin-top: 3rem;
+				text-align: center;
+				color: var(--faint);
+				font-size: 0.8rem;
+			}
+			footer a {
+				color: var(--muted);
+			}
+			.state {
+				text-align: center;
+				color: var(--muted);
+				font-family: var(--mono);
+				padding: 3rem 0;
+			}
+		</style>
+	</head>
+	<body>
+		<div class="wrap">
+			<header>
+				<p class="eyebrow">Retroix Arcade</p>
+				<h1>HIGH SCORES</h1>
+				<p class="sub">
+					Every Retroix game's top ten — live from one Cloudflare Worker + D1. Beat a score by
+					playing; it shows up here.
+				</p>
+				<div class="meta">
+					<span><b id="m-games">–</b> games</span>
+					<span><b id="m-scores">–</b> scores logged</span>
+					<button type="button" class="refresh" id="refresh">↻ Refresh</button>
+				</div>
+			</header>
+
+			<main id="grid" class="grid" aria-live="polite">
+				<p class="state">Loading the arcade…</p>
+			</main>
+
+			<footer>
+				One shared backend for every game ·
+				<a href="https://github.com/DanMat/retroix-leaderboard" target="_blank" rel="noreferrer">
+					source
+				</a>
+				· built on
+				<a href="https://github.com/DanMat/Retroix" target="_blank" rel="noreferrer">Retroix</a>
+			</footer>
+		</div>
+
+		<script>
+			var API = 'https://retroix-leaderboard.danmat.workers.dev';
+			// Known roster — shown even before a game has any scores.
+			var GAMES = [
+				{ id: 'blastix', name: 'Blastix', tag: 'run-and-gun' },
+				{ id: 'paddix', name: 'Paddix', tag: 'brick-breaker' },
+				{ id: 'alienix', name: 'Alienix', tag: 'twin-stick' },
+				{ id: 'space-jam', name: 'Space-Jam', tag: 'shmup' },
+				{ id: 'bombjack', name: 'BombJack', tag: 'road shooter' },
+				{ id: 'castle', name: 'Castle', tag: 'maze escape' },
+			];
+			var playUrl = function (id) {
+				// gameId → the Pages repo name (title-cased, hyphens kept)
+				var repo = GAMES.filter(function (g) {
+					return g.id === id;
+				})[0];
+				var name = repo
+					? repo.name
+					: id.replace(/(^|-)([a-z])/g, function (_, s, c) {
+							return s + c.toUpperCase();
+						});
+				return 'https://danmat.github.io/' + name + '/';
+			};
+			var esc = function (s) {
+				return String(s).replace(/[&<>"]/g, function (c) {
+					return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c];
+				});
+			};
+
+			function rowsHtml(rows, id) {
+				if (!rows || !rows.length) {
+					return (
+						'<div class="empty">No scores yet — <a href="' +
+						playUrl(id) +
+						'" target="_blank" rel="noreferrer">be the first ↗</a></div>'
+					);
+				}
+				return (
+					'<ol class="board">' +
+					rows
+						.slice(0, 10)
+						.map(function (r, i) {
+							return (
+								'<li class="r' +
+								(i + 1) +
+								'"><span class="rk">' +
+								(i + 1) +
+								'</span><span class="ini">' +
+								esc(r.initials || 'AAA') +
+								'</span><span class="sc">' +
+								Number(r.score).toLocaleString('en-US') +
+								'</span></li>'
+							);
+						})
+						.join('') +
+					'</ol>'
+				);
+			}
+
+			function render(boards, games) {
+				var totalScores = games.reduce(function (n, g) {
+					return n + (g.entries || 0);
+				}, 0);
+				document.getElementById('m-games').textContent = GAMES.length;
+				document.getElementById('m-scores').textContent = totalScores.toLocaleString('en-US');
+				document.getElementById('grid').innerHTML = GAMES.map(function (g) {
+					return (
+						'<section class="cab">' +
+						'<div class="cab-head"><a class="cab-name" href="' +
+						playUrl(g.id) +
+						'" target="_blank" rel="noreferrer">' +
+						esc(g.name) +
+						' ↗</a><span class="cab-tag">' +
+						esc(g.tag) +
+						'</span></div>' +
+						rowsHtml(boards[g.id], g.id) +
+						'</section>'
+					);
+				}).join('');
+			}
+
+			function load() {
+				Promise.all([
+					fetch(API + '/leaderboards?limit=10').then(function (r) {
+						return r.json();
+					}),
+					fetch(API + '/games').then(function (r) {
+						return r.json();
+					}),
+				])
+					.then(function (res) {
+						render(res[0] || {}, res[1] || []);
+					})
+					.catch(function () {
+						document.getElementById('grid').innerHTML =
+							'<p class="state">Couldn’t reach the leaderboard. Try again in a moment.</p>';
+					});
+			}
+
+			document.getElementById('refresh').addEventListener('click', load);
+			load();
+		</script>
+	</body>
+</html>
