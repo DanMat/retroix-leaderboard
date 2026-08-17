@@ -1,0 +1,16 @@
+# One multi-tenant leaderboard service for ALL Retroix games (namespaced by game).
+name = "retroix-leaderboard"
+main = "src/worker.ts"
+compatibility_date = "2025-09-01"
+workers_dev = true
+
+[[d1_databases]]
+binding = "DB"
+database_name = "retroix-leaderboard"
+database_id = "aed06b55-87d5-43bb-b0ef-2f4104439e68"
+
+# Optional hardening (uncomment to use):
+# [vars]
+# ALLOWED_GAMES = "blastix,demo"          # restrict to known games
+# MAX_SCORE = "1000000000"                # reject absurd scores
+# ALLOWED_ORIGINS = "https://danmat.github.io"  # lock CORS (default "*")
